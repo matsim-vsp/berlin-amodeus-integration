@@ -1,28 +1,48 @@
 import static org.matsim.core.config.groups.ControlerConfigGroup.RoutingAlgorithmType.FastAStarLandmarks;
 
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Random;
 
 import org.apache.log4j.Logger;
 import org.matsim.api.core.v01.Scenario;
 import org.matsim.api.core.v01.TransportMode;
-import org.matsim.api.core.v01.population.Leg;
 import org.matsim.api.core.v01.population.Person;
 import org.matsim.api.core.v01.population.Plan;
+import org.matsim.api.core.v01.population.PlanElement;
+import org.matsim.contrib.dvrp.run.DvrpConfigGroup;
+import org.matsim.contrib.dvrp.run.DvrpModule;
+import org.matsim.contrib.dvrp.trafficmonitoring.DvrpTravelTimeModule;
 import org.matsim.core.config.Config;
 import org.matsim.core.config.ConfigUtils;
 import org.matsim.core.config.groups.PlanCalcScoreConfigGroup.ActivityParams;
-import org.matsim.core.config.groups.PlansCalcRouteConfigGroup.ModeRoutingParams;
+import org.matsim.core.config.groups.PlanCalcScoreConfigGroup.ModeParams;
 import org.matsim.core.config.groups.QSimConfigGroup;
+import org.matsim.core.config.groups.StrategyConfigGroup.StrategySettings;
 import org.matsim.core.config.groups.VspExperimentalConfigGroup;
 import org.matsim.core.controler.AbstractModule;
 import org.matsim.core.controler.Controler;
 import org.matsim.core.controler.OutputDirectoryLogging;
 import org.matsim.core.gbl.Gbl;
+import org.matsim.core.population.PopulationUtils;
+import org.matsim.core.router.MainModeIdentifier;
 import org.matsim.core.router.StageActivityTypes;
 import org.matsim.core.router.StageActivityTypesImpl;
+import org.matsim.core.router.TripRouter;
 import org.matsim.core.router.TripStructureUtils;
 import org.matsim.core.router.TripStructureUtils.Trip;
 import org.matsim.core.scenario.ScenarioUtils;
+
+import ch.ethz.matsim.av.config.AVConfigGroup;
+import ch.ethz.matsim.av.config.AVScoringParameterSet;
+import ch.ethz.matsim.av.config.operator.OperatorConfig;
+import ch.ethz.matsim.av.dispatcher.single_heuristic.SingleHeuristicDispatcher;
+import ch.ethz.matsim.av.framework.AVModule;
+import ch.ethz.matsim.av.framework.AVQSimModule;
+import ch.ethz.matsim.av.generator.PopulationDensityGenerator;
+import ch.sbb.matsim.routing.pt.raptor.SwissRailRaptorModule;
 
 public class RunAmodeusInBerlin {
 
@@ -39,6 +59,17 @@ public class RunAmodeusInBerlin {
 		}
 
 		Config config = prepareConfig(args);
+
+		config.controler().setWriteEventsInterval(1);
+		config.qsim().setNumberOfThreads(4);
+		config.global().setNumberOfThreads(4);
+
+		for (StrategySettings settings : config.strategy().getStrategySettings()) {
+			if (settings.getStrategyName().equals("SubtourModeChoice")) {
+				settings.setWeight(0.9);
+			}
+		}
+
 		Scenario scenario = prepareScenario(config);
 		Controler controler = prepareControler(scenario);
 		controler.run();
@@ -61,6 +92,17 @@ public class RunAmodeusInBerlin {
 				addTravelDisutilityFactoryBinding(TransportMode.ride).to(carTravelDisutilityFactoryKey());
 			}
 		});
+
+		controler.addOverridingModule(new AbstractModule() {
+			@Override
+			public void install() {
+				bind(MainModeIdentifier.class).toInstance(new BackportMainModeIdentifier());
+			}
+		});
+
+		controler.addOverridingModule(new SwissRailRaptorModule());
+
+		configureAmodeus(scenario.getConfig(), scenario, controler);
 
 		return controler;
 	}
@@ -123,43 +165,8 @@ public class RunAmodeusInBerlin {
 					person.getAttributes().getAttribute("subpopulation"));
 		}
 
-		// Old MainModeIdentifier does not understand non_network_walk (it returns it as
-		// main mode)
-		StageActivityTypes stageActivities = new StageActivityTypesImpl("pt interaction", "car interaction");
-
-		for (Person person : scenario.getPopulation().getPersons().values()) {
-			for (Plan plan : person.getPlans()) {
-				for (Trip trip : TripStructureUtils.getTrips(plan, stageActivities)) {	
-					boolean hasPt = false;
-					
-					for (Leg leg : trip.getLegsOnly()) {
-						if (leg.getMode().equals("pt")) {
-							hasPt = true;
-						}
-					}
-					
-					for (Leg leg : trip.getLegsOnly()) {
-						if (leg.getMode().equals("non_network_walk")) {
-							if (hasPt) {
-								leg.setMode("transit_walk");
-							} else {
-								leg.setMode("access_walk");
-							}
-						}
-					}
-				}
-			}
-		}
-
 		config.plansCalcRoute().removeModeRoutingParams("non_network_walk");
 		config.plansCalcRoute().removeModeRoutingParams(TransportMode.transit_walk);
-
-		config.transit().setUseTransit(false);
-		
-		ModeRoutingParams routingParams = new ModeRoutingParams("pt");
-		routingParams.setTeleportedModeSpeed(config.plansCalcRoute().getModeRoutingParams().get("bicycle").getTeleportedModeSpeed());
-		routingParams.setBeelineDistanceFactor(1.3);
-		config.plansCalcRoute().addModeRoutingParams(routingParams);
 
 		for (long ii = 600; ii <= 97200; ii += 600) {
 			ActivityParams params;
@@ -204,5 +211,89 @@ public class RunAmodeusInBerlin {
 		config.planCalcScore().addActivityParams(params);
 
 		config.controler().setOutputDirectory("output");
+		config.transit().setUsingTransitInMobsim(false);
+	}
+
+	public static void configureAmodeus(Config config, Scenario scenario, Controler controller) {
+		StageActivityTypes stageActivities = new StageActivityTypesImpl("car interaction", "pt interaction",
+				"ride interaction", "freight interaction");
+		MainModeIdentifier mainModeIdentifier = new BackportMainModeIdentifier();
+		Random random = new Random(0);
+
+		for (Person person : scenario.getPopulation().getPersons().values()) {
+			for (Plan plan : person.getPlans()) {
+				for (Trip trip : TripStructureUtils.getTrips(plan, stageActivities)) {
+					String mainMode = mainModeIdentifier.identifyMainMode(trip.getTripElements());
+
+					if (mainMode.equals("car")) {
+						if (random.nextDouble() < 0.01) {
+							List<? extends PlanElement> newElements = Collections
+									.singletonList(PopulationUtils.createLeg("av"));
+							TripRouter.insertTrip(plan, trip.getOriginActivity(), newElements,
+									trip.getDestinationActivity());
+						}
+					}
+				}
+			}
+		}
+
+		{ // Configure AV
+
+			// CONFIG
+
+			config.planCalcScore().addModeParams(new ModeParams("av"));
+
+			DvrpConfigGroup dvrpConfig = new DvrpConfigGroup();
+			config.addModule(dvrpConfig);
+
+			AVConfigGroup avConfig = new AVConfigGroup();
+			config.addModule(avConfig);
+
+			avConfig.setAllowedLinkMode("car");
+
+			OperatorConfig operatorConfig = new OperatorConfig();
+			avConfig.addOperator(operatorConfig);
+
+			// operatorConfig.getInteractionFinderConfig().setType(type);
+			// AVInteractionFinder
+			
+			avConfig.setEnableDistanceAnalysis(true);
+			avConfig.setPassengerAnalysisInterval(1);
+			avConfig.setVehicleAnalysisInterval(1);
+
+			operatorConfig.getDispatcherConfig().setType(SingleHeuristicDispatcher.TYPE);
+			operatorConfig.getGeneratorConfig().setType(PopulationDensityGenerator.TYPE);
+			operatorConfig.getGeneratorConfig().setNumberOfVehicles(200);
+
+			List<String> modes = new LinkedList<>(Arrays.asList(config.subtourModeChoice().getModes())); //
+			modes.add("av");
+			config.subtourModeChoice().setModes(modes.toArray(new String[modes.size()]));
+
+			AVScoringParameterSet params;
+
+			params = new AVScoringParameterSet();
+			params.setMarginalUtilityOfWaitingTime(-0.1);
+			params.setStuckUtility(-50.0);
+			params.setSubpopulation("person");
+			avConfig.addScoringParameters(params);
+
+			params = new AVScoringParameterSet();
+			params.setMarginalUtilityOfWaitingTime(-0.1);
+			params.setStuckUtility(-50.0);
+			params.setSubpopulation("freight");
+			avConfig.addScoringParameters(params);
+
+			// operatorConfig.getParams().put("virtualNetworkPath",
+			// "berlin_virtual_network/berlin_virtual_network");
+			// operatorConfig.getParams().put("travelDataPath", "berlin_travel_data");
+
+			// CONTROLLER
+
+			controller.addOverridingModule(new DvrpModule());
+			controller.addOverridingModule(new DvrpTravelTimeModule());
+			controller.addOverridingModule(new AVModule());
+
+			controller.configureQSimComponents(AVQSimModule::configureComponents);
+		}
 	}
 }

@@ -1,89 +1,136 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+	<modelVersion>4.0.0</modelVersion>
 
-    <groupId>org.example</groupId>
-    <artifactId>berlin-amod-integration</artifactId>
-    <version>1.0-SNAPSHOT</version>
+	<groupId>org.example</groupId>
+	<artifactId>berlin-amod-integration</artifactId>
+	<version>1.0-SNAPSHOT</version>
 
-    <properties>
-        <!-- <matsim.version>12.0-SNAPSHOT</matsim.version>  -->
-<!--        <matsim.version>12.0-2019w34-SNAPSHOT</matsim.version>-->
-        <matsim.version>11.0</matsim.version>
-        <maven.compiler.source>1.8</maven.compiler.source>
-        <maven.compiler.target>1.8</maven.compiler.target>
-    </properties>
+	<properties>
+		<!-- <matsim.version>12.0-SNAPSHOT</matsim.version> -->
+		<!-- <matsim.version>12.0-2019w34-SNAPSHOT</matsim.version> -->
+		<matsim.version>11.0</matsim.version>
+		<maven.compiler.source>1.8</maven.compiler.source>
+		<maven.compiler.target>1.8</maven.compiler.target>
+	</properties>
 
-    <repositories>
+	<repositories>
 
-        <!-- Repository for MATSim releases (MATSim is not on Maven central) -->
-        <repository>
-            <id>matsim</id>
-            <url>https://dl.bintray.com/matsim/matsim</url>
-        </repository>
+		<!-- Repository for MATSim releases (MATSim is not on Maven central) -->
+		<repository>
+			<id>matsim</id>
+			<url>https://dl.bintray.com/matsim/matsim</url>
+		</repository>
 
-        <repository>
-            <id>jitpack.io</id>
-            <url>https://jitpack.io</url>
-        </repository>
+		<repository>
+			<id>jitpack.io</id>
+			<url>https://jitpack.io</url>
+		</repository>
 
-        <repository>
-            <!-- Geotools is not on Maven central -->
-            <id>osgeo</id>
-            <name>Geotools repository</name>
-            <url>http://download.osgeo.org/webdav/geotools</url>
-        </repository>
+		<repository>
+			<!-- Geotools is not on Maven central -->
+			<id>osgeo</id>
+			<name>Geotools repository</name>
+			<url>http://download.osgeo.org/webdav/geotools</url>
+		</repository>
 
-        <repository>
-            <!-- Required for MATSim snaphots -->
-            <id>ojo-snapshots</id>
-            <url>http://oss.jfrog.org/libs-snapshot</url>
-        </repository>
+		<repository>
+			<!-- Required for MATSim snaphots -->
+			<id>ojo-snapshots</id>
+			<url>http://oss.jfrog.org/libs-snapshot</url>
+		</repository>
 
-    </repositories>
+		<repository>
+			<id>matsim-eth</id>
+			<url>https://dl.bintray.com/matsim-eth/matsim</url>
+		</repository>
 
-    <dependencies>
+		<repository>
+			<id>tensor-mvn-repo</id>
+			<url>https://raw.github.com/idsc-frazzoli/tensor/mvn-repo/</url>
+			<snapshots>
+				<enabled>true</enabled>
+				<updatePolicy>always</updatePolicy>
+			</snapshots>
+		</repository>
 
-        <!-- This is the matsim "core": -->
-        <dependency>
-            <groupId>org.matsim</groupId>
-            <artifactId>matsim</artifactId>
-            <version>${matsim.version}</version>
-        </dependency>
+		<repository>
+			<id>amodeus-mvn-repo</id>
+			<url>https://raw.github.com/idsc-frazzoli/amodeus/mvn-repo/</url>
+			<snapshots>
+				<enabled>true</enabled>
+				<updatePolicy>always</updatePolicy>
+			</snapshots>
+		</repository>
 
-        <!-- Include the JUnit testing library.  Not transitive. -->
-        <dependency>
-            <groupId>junit</groupId>
-            <artifactId>junit</artifactId>
-            <version>4.12</version>
-            <scope>test</scope>
-        </dependency>
+		<repository>
+			<id>SBB</id>
+			<url>https://schweizerischebundesbahnen.bintray.com/simba.mvn</url>
+		</repository>
 
-        <dependency>
-            <!--MATSim test infrastructure.  Not transitive.-->
-            <groupId>org.matsim</groupId>
-            <artifactId>matsim</artifactId>
-            <type>test-jar</type>
-            <version>${matsim.version}</version>
-            <scope>test</scope>
-        </dependency>
+	</repositories>
 
-        <!--The following is here since there was an upstream-->
-        <!--problem, and we did not want to wait until that was resolved.  The-->
-        <!--comments below are related to that problem.  kai/ihab, dec'18-->
-        <!--<dependency>-->
-        <!--	  <!-\-MATSim examples.  Not inherited from matsim since it-\->-->
-        <!--	  <!-\-is in test scope there.  Leave in test scope since-\->-->
-        <!--	  <!-\-it is not in weekly releases and then causes problems.  -\->-->
-        <!--		<groupId>org.matsim</groupId>-->
-        <!--		<artifactId>matsim-examples</artifactId>-->
-        <!--		<!-\-<scope>test</scope>-\->-->
-        <!--		<version>0.11.0</version>-->
-        <!--</dependency>-->
+	<dependencies>
 
-    </dependencies>
+		<!-- This is the matsim "core": -->
+		<dependency>
+			<groupId>org.matsim</groupId>
+			<artifactId>matsim</artifactId>
+			<version>${matsim.version}</version>
+		</dependency>
+
+		<!-- Include the JUnit testing library. Not transitive. -->
+		<dependency>
+			<groupId>junit</groupId>
+			<artifactId>junit</artifactId>
+			<version>4.12</version>
+			<scope>test</scope>
+		</dependency>
+
+		<dependency>
+			<!--MATSim test infrastructure. Not transitive. -->
+			<groupId>org.matsim</groupId>
+			<artifactId>matsim</artifactId>
+			<type>test-jar</type>
+			<version>${matsim.version}</version>
+			<scope>test</scope>
+		</dependency>
+
+		<!--The following is here since there was an upstream -->
+		<!--problem, and we did not want to wait until that was resolved. The -->
+		<!--comments below are related to that problem. kai/ihab, dec'18 -->
+		<!--<dependency> -->
+		<!-- <!-\-MATSim examples. Not inherited from matsim since it-\-> -->
+		<!-- <!-\-is in test scope there. Leave in test scope since-\-> -->
+		<!-- <!-\-it is not in weekly releases and then causes problems. -\-> -->
+		<!-- <groupId>org.matsim</groupId> -->
+		<!-- <artifactId>matsim-examples</artifactId> -->
+		<!-- <!-\-<scope>test</scope>-\-> -->
+		<!-- <version>0.11.0</version> -->
+		<!--</dependency> -->
+
+
+		<dependency>
+			<groupId>ch.ethz.matsim</groupId>
+			<artifactId>av</artifactId>
+			<version>1.0.3-matsim11</version>
+		</dependency>
+
+		<dependency>
+			<groupId>ch.ethz.idsc</groupId>
+			<artifactId>amodeus</artifactId>
+			<version>1.8.4</version>
+		</dependency>
+
+		<dependency>
+			<groupId>ch.sbb</groupId>
+			<artifactId>matsim-sbb-extensions</artifactId>
+			<version>11.6</version>
+		</dependency>
+
+	</dependencies>
 
 
 </project>
