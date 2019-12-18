@@ -1,5 +1,11 @@
 import static org.matsim.core.config.groups.ControlerConfigGroup.RoutingAlgorithmType.FastAStarLandmarks;
 
+import java.io.File;
+import java.io.IOException;
+import java.net.URISyntaxException;
+import java.nio.file.FileSystems;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedList;
@@ -35,10 +41,21 @@ import org.matsim.core.router.TripStructureUtils;
 import org.matsim.core.router.TripStructureUtils.Trip;
 import org.matsim.core.scenario.ScenarioUtils;
 
+import ch.ethz.idsc.amodeus.matsim.mod.AmodeusDatabaseModule;
+import ch.ethz.idsc.amodeus.matsim.mod.AmodeusDispatcherModule;
+import ch.ethz.idsc.amodeus.matsim.mod.AmodeusModule;
+import ch.ethz.idsc.amodeus.matsim.mod.AmodeusVehicleGeneratorModule;
+import ch.ethz.idsc.amodeus.matsim.mod.AmodeusVehicleToVSGeneratorModule;
+import ch.ethz.idsc.amodeus.matsim.mod.AmodeusVirtualNetworkModule;
+import ch.ethz.idsc.amodeus.net.DatabaseModule;
+import ch.ethz.idsc.amodeus.net.MatsimAmodeusDatabase;
+import ch.ethz.idsc.amodeus.net.SimulationServer;
+import ch.ethz.idsc.amodeus.options.ScenarioOptions;
+import ch.ethz.idsc.amodeus.options.ScenarioOptionsBase;
+import ch.ethz.idsc.amodeus.util.io.MultiFileTools;
 import ch.ethz.matsim.av.config.AVConfigGroup;
 import ch.ethz.matsim.av.config.AVScoringParameterSet;
 import ch.ethz.matsim.av.config.operator.OperatorConfig;
-import ch.ethz.matsim.av.dispatcher.single_heuristic.SingleHeuristicDispatcher;
 import ch.ethz.matsim.av.framework.AVModule;
 import ch.ethz.matsim.av.framework.AVQSimModule;
 import ch.ethz.matsim.av.generator.PopulationDensityGenerator;
@@ -48,27 +65,20 @@ public class RunAmodeusInBerlin {
 
 	private static final Logger log = Logger.getLogger(RunAmodeusInBerlin.class);
 
-	public static void main(String[] args) {
+	public static void main(String[] args) throws IOException, URISyntaxException {
 
 		for (String arg : args) {
 			log.info(arg);
 		}
 
 		if (args.length == 0) {
-			args = new String[] { "scenarios/berlin-v5.4-1pct.config.xml" };
+			args = new String[] { "berlin-v5.4-1pct.config.xml" };
 		}
 
 		Config config = prepareConfig(args);
-
-		config.controler().setWriteEventsInterval(1);
+		
 		config.qsim().setNumberOfThreads(4);
 		config.global().setNumberOfThreads(4);
-
-		for (StrategySettings settings : config.strategy().getStrategySettings()) {
-			if (settings.getStrategyName().equals("SubtourModeChoice")) {
-				settings.setWeight(0.9);
-			}
-		}
 
 		Scenario scenario = prepareScenario(config);
 		Controler controler = prepareControler(scenario);
@@ -76,7 +86,7 @@ public class RunAmodeusInBerlin {
 
 	}
 
-	public static Controler prepareControler(Scenario scenario) {
+	public static Controler prepareControler(Scenario scenario) throws IOException, URISyntaxException {
 		// note that for something like signals, and presumably drt, one needs the
 		// controler object
 
@@ -210,11 +220,11 @@ public class RunAmodeusInBerlin {
 		params.setScoringThisActivityAtAll(false);
 		config.planCalcScore().addActivityParams(params);
 
-		config.controler().setOutputDirectory("output");
 		config.transit().setUsingTransitInMobsim(false);
 	}
 
-	public static void configureAmodeus(Config config, Scenario scenario, Controler controller) {
+	public static void configureAmodeus(Config config, Scenario scenario, Controler controller)
+			throws IOException, URISyntaxException {
 		StageActivityTypes stageActivities = new StageActivityTypesImpl("car interaction", "pt interaction",
 				"ride interaction", "freight interaction");
 		MainModeIdentifier mainModeIdentifier = new BackportMainModeIdentifier();
@@ -257,11 +267,17 @@ public class RunAmodeusInBerlin {
 			// operatorConfig.getInteractionFinderConfig().setType(type);
 			// AVInteractionFinder
 			
+			// operatorConfig.getGeneratorConfig().getVeh
+
 			avConfig.setEnableDistanceAnalysis(true);
 			avConfig.setPassengerAnalysisInterval(1);
 			avConfig.setVehicleAnalysisInterval(1);
 
-			operatorConfig.getDispatcherConfig().setType(SingleHeuristicDispatcher.TYPE);
+			// operatorConfig.getDispatcherConfig().setType(SingleHeuristicDispatcher.TYPE);
+			// operatorConfig.getDispatcherConfig().setType("DemandSupplyBalancingDispatcher");
+			// operatorConfig.getDispatcherConfig().setType("NorthPoleSharedDispatcher");
+			operatorConfig.getDispatcherConfig().setType("ExampleDispatcher");
+
 			operatorConfig.getGeneratorConfig().setType(PopulationDensityGenerator.TYPE);
 			operatorConfig.getGeneratorConfig().setNumberOfVehicles(200);
 
@@ -291,9 +307,44 @@ public class RunAmodeusInBerlin {
 
 			controller.addOverridingModule(new DvrpModule());
 			controller.addOverridingModule(new DvrpTravelTimeModule());
-			controller.addOverridingModule(new AVModule());
+			controller.addOverridingModule(new AVModule(false));
 
 			controller.configureQSimComponents(AVQSimModule::configureComponents);
 		}
+
+		{ // Configure Amodeus
+
+			File workingDirectory = MultiFileTools.getDefaultWorkingDirectory();
+			ScenarioOptions scenarioOptions = new ScenarioOptions(workingDirectory, ScenarioOptionsBase.getDefault());
+			scenarioOptions.setProperty("virtualNetwork", ""); // "berlin_virtual_network");
+			scenarioOptions.setProperty("travelData", "");
+			scenarioOptions.setProperty("LocationSpec", "BERLIN");
+			scenarioOptions.setProperty("numVirtualNodes", "10");
+
+			Path absoluteConfigPath = Paths.get(config.getContext().toURI());
+			Path workingDirectoryPath = FileSystems.getDefault().getPath(workingDirectory.getAbsolutePath());
+			scenarioOptions.setProperty("simuConfig", workingDirectoryPath.relativize(absoluteConfigPath).toString());
+
+			scenarioOptions.saveAndOverwriteAmodeusOptions();
+
+			// Open server port for clients to connect to (e.g. viewer)
+			SimulationServer.INSTANCE.startAcceptingNonBlocking();
+			SimulationServer.INSTANCE.setWaitForClients(false);
+
+			MatsimAmodeusDatabase db = MatsimAmodeusDatabase.initialize(scenario.getNetwork(),
+					new BerlinReferenceFrame());
+
+			// controller.addOverridingModule(new AVModule(false));
+			controller.addOverridingModule(new AmodeusModule());
+			controller.addOverridingModule(new AmodeusDispatcherModule());
+			controller.addOverridingModule(new AmodeusVehicleGeneratorModule());
+			controller.addOverridingModule(new AmodeusVehicleToVSGeneratorModule());
+			controller.addOverridingModule(new AmodeusDatabaseModule(db));
+			controller.addOverridingModule(new AmodeusVirtualNetworkModule(scenarioOptions));
+			controller.addOverridingModule(new DatabaseModule());
+		}
+
+		// Add custom dispatcher
+		controller.addOverridingModule(new ExampleDispatcherModule());
 	}
 }
