@@ -65,6 +65,11 @@ public class RunAmodeusInBerlin {
 
 	private static final Logger log = Logger.getLogger(RunAmodeusInBerlin.class);
 
+
+	/**
+	 *
+	 * before running, you need to set the working directory in the run configuration to the scenarios folder in this repo.
+	 */
 	public static void main(String[] args) throws IOException, URISyntaxException {
 
 		for (String arg : args) {
