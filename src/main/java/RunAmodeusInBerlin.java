@@ -23,6 +23,7 @@ import org.matsim.contrib.dvrp.run.DvrpModule;
 import org.matsim.contrib.dvrp.trafficmonitoring.DvrpTravelTimeModule;
 import org.matsim.core.config.Config;
 import org.matsim.core.config.ConfigUtils;
+import org.matsim.core.config.groups.PlanCalcScoreConfigGroup;
 import org.matsim.core.config.groups.PlanCalcScoreConfigGroup.ActivityParams;
 import org.matsim.core.config.groups.PlanCalcScoreConfigGroup.ModeParams;
 import org.matsim.core.config.groups.QSimConfigGroup;
@@ -67,6 +68,14 @@ public class RunAmodeusInBerlin {
 
 
 	/**
+	 * this class basically represents a copy of the RunBerlinScenario v5.4 (@see <a href="https://github.com/matsim-scenarios/matsim-berlin">MATSim-Berlin repo</a>)
+	 * with is modified an backported to MATSim 11.0.
+	 * This is necessary as AMODeus is compatible with MATSim 11.0 only at the time of creation of this class.
+	 *
+	 *
+	 * NOTE:
+	 *
+	 * arguments have to be in this order: workingDirectory, config file, additional arguemnts...
 	 *
 	 * before running, you need to set the working directory in the run configuration to the scenarios folder in this repo.
 	 */
@@ -77,8 +86,10 @@ public class RunAmodeusInBerlin {
 		}
 
 		if (args.length == 0) {
-			args = new String[] { "berlin-v5.4-1pct.config.xml" };
+			args = new String[] { "scenarios", "berlin-v5.4-1pct.config.xml" };
 		}
+
+		File workingDirectory = getWorkingDirectory(args[0]);
 
 		Config config = prepareConfig(args);
 		
@@ -86,12 +97,22 @@ public class RunAmodeusInBerlin {
 		config.global().setNumberOfThreads(4);
 
 		Scenario scenario = prepareScenario(config);
-		Controler controler = prepareControler(scenario);
+		Controler controler = prepareControler(scenario, workingDirectory);
 		controler.run();
 
 	}
 
-	public static Controler prepareControler(Scenario scenario) throws IOException, URISyntaxException {
+	static File getWorkingDirectory(String dir){
+		try {
+			return (new File(dir)).getCanonicalFile();
+		} catch (Exception var1) {
+			System.err.println("Cannot load working directory, returning null: ");
+			var1.printStackTrace();
+			return null;
+		}
+	}
+
+	public static Controler prepareControler(Scenario scenario, File workingDirectory) throws IOException, URISyntaxException {
 		// note that for something like signals, and presumably drt, one needs the
 		// controler object
 
@@ -116,9 +137,7 @@ public class RunAmodeusInBerlin {
 		});
 
 		controler.addOverridingModule(new SwissRailRaptorModule());
-
-		configureAmodeus(scenario.getConfig(), scenario, controler);
-
+		configureAmodeus(scenario.getConfig(), scenario, controler, workingDirectory);
 		return controler;
 	}
 
@@ -140,9 +159,9 @@ public class RunAmodeusInBerlin {
 	public static Config prepareConfig(String[] args) {
 		OutputDirectoryLogging.catchLogEntries();
 
-		String[] typedArgs = Arrays.copyOfRange(args, 1, args.length);
+		String[] typedArgs = Arrays.copyOfRange(args, 2, args.length);
 
-		final Config config = ConfigUtils.loadConfig(args[0]); // I need this to set the context
+		final Config config = ConfigUtils.loadConfig(args[0] + "/" + args[1]); // I need this to set the context
 
 		config.controler().setRoutingAlgorithmType(FastAStarLandmarks);
 
@@ -228,98 +247,12 @@ public class RunAmodeusInBerlin {
 		config.transit().setUsingTransitInMobsim(false);
 	}
 
-	public static void configureAmodeus(Config config, Scenario scenario, Controler controller)
+	public static void configureAmodeus(Config config, Scenario scenario, Controler controller, File workingDirectory)
 			throws IOException, URISyntaxException {
-		StageActivityTypes stageActivities = new StageActivityTypesImpl("car interaction", "pt interaction",
-				"ride interaction", "freight interaction");
-		MainModeIdentifier mainModeIdentifier = new BackportMainModeIdentifier();
-		Random random = new Random(0);
-
-		for (Person person : scenario.getPopulation().getPersons().values()) {
-			for (Plan plan : person.getPlans()) {
-				for (Trip trip : TripStructureUtils.getTrips(plan, stageActivities)) {
-					String mainMode = mainModeIdentifier.identifyMainMode(trip.getTripElements());
-
-					if (mainMode.equals("car")) {
-						if (random.nextDouble() < 0.01) {
-							List<? extends PlanElement> newElements = Collections
-									.singletonList(PopulationUtils.createLeg("av"));
-							TripRouter.insertTrip(plan, trip.getOriginActivity(), newElements,
-									trip.getDestinationActivity());
-						}
-					}
-				}
-			}
-		}
-
-		{ // Configure AV
-
-			// CONFIG
-
-			config.planCalcScore().addModeParams(new ModeParams("av"));
-
-			DvrpConfigGroup dvrpConfig = new DvrpConfigGroup();
-			config.addModule(dvrpConfig);
-
-			AVConfigGroup avConfig = new AVConfigGroup();
-			config.addModule(avConfig);
-
-			avConfig.setAllowedLinkMode("car");
-
-			OperatorConfig operatorConfig = new OperatorConfig();
-			avConfig.addOperator(operatorConfig);
-
-			// operatorConfig.getInteractionFinderConfig().setType(type);
-			// AVInteractionFinder
-			
-			// operatorConfig.getGeneratorConfig().getVeh
-
-			avConfig.setEnableDistanceAnalysis(true);
-			avConfig.setPassengerAnalysisInterval(1);
-			avConfig.setVehicleAnalysisInterval(1);
-
-			// operatorConfig.getDispatcherConfig().setType(SingleHeuristicDispatcher.TYPE);
-			// operatorConfig.getDispatcherConfig().setType("DemandSupplyBalancingDispatcher");
-			// operatorConfig.getDispatcherConfig().setType("NorthPoleSharedDispatcher");
-			operatorConfig.getDispatcherConfig().setType("ExampleDispatcher");
-
-			operatorConfig.getGeneratorConfig().setType(PopulationDensityGenerator.TYPE);
-			operatorConfig.getGeneratorConfig().setNumberOfVehicles(200);
-
-			List<String> modes = new LinkedList<>(Arrays.asList(config.subtourModeChoice().getModes())); //
-			modes.add("av");
-			config.subtourModeChoice().setModes(modes.toArray(new String[modes.size()]));
-
-			AVScoringParameterSet params;
-
-			params = new AVScoringParameterSet();
-			params.setMarginalUtilityOfWaitingTime(-0.1);
-			params.setStuckUtility(-50.0);
-			params.setSubpopulation("person");
-			avConfig.addScoringParameters(params);
-
-			params = new AVScoringParameterSet();
-			params.setMarginalUtilityOfWaitingTime(-0.1);
-			params.setStuckUtility(-50.0);
-			params.setSubpopulation("freight");
-			avConfig.addScoringParameters(params);
-
-			// operatorConfig.getParams().put("virtualNetworkPath",
-			// "berlin_virtual_network/berlin_virtual_network");
-			// operatorConfig.getParams().put("travelDataPath", "berlin_travel_data");
-
-			// CONTROLLER
-
-			controller.addOverridingModule(new DvrpModule());
-			controller.addOverridingModule(new DvrpTravelTimeModule());
-			controller.addOverridingModule(new AVModule(false));
-
-			controller.configureQSimComponents(AVQSimModule::configureComponents);
-		}
-
+		insertAVTripsIntoPopulation(scenario);
+		configureAVContrib(config, controller);
 		{ // Configure Amodeus
 
-			File workingDirectory = MultiFileTools.getDefaultWorkingDirectory();
 			ScenarioOptions scenarioOptions = new ScenarioOptions(workingDirectory, ScenarioOptionsBase.getDefault());
 			scenarioOptions.setProperty("virtualNetwork", ""); // "berlin_virtual_network");
 			scenarioOptions.setProperty("travelData", "");
@@ -351,5 +284,95 @@ public class RunAmodeusInBerlin {
 
 		// Add custom dispatcher
 		controller.addOverridingModule(new ExampleDispatcherModule());
+	}
+
+	private static void insertAVTripsIntoPopulation(Scenario scenario) {
+		StageActivityTypes stageActivities = new StageActivityTypesImpl("car interaction", "pt interaction",
+				"ride interaction", "freight interaction");
+		MainModeIdentifier mainModeIdentifier = new BackportMainModeIdentifier();
+		Random random = new Random(0);
+
+		for (Person person : scenario.getPopulation().getPersons().values()) {
+			for (Plan plan : person.getPlans()) {
+				for (Trip trip : TripStructureUtils.getTrips(plan, stageActivities)) {
+					String mainMode = mainModeIdentifier.identifyMainMode(trip.getTripElements());
+
+					if (mainMode.equals("car")) {
+						if (random.nextDouble() < 0.01) {
+							List<? extends PlanElement> newElements = Collections
+									.singletonList(PopulationUtils.createLeg("av"));
+							TripRouter.insertTrip(plan, trip.getOriginActivity(), newElements,
+									trip.getDestinationActivity());
+						}
+					}
+				}
+			}
+		}
+	}
+
+	private static void configureAVContrib(Config config, Controler controller) {
+		// Configure AV
+
+		// CONFIG
+
+		config.planCalcScore().addModeParams(new ModeParams("av"));
+
+		DvrpConfigGroup dvrpConfig = new DvrpConfigGroup();
+		config.addModule(dvrpConfig);
+
+		AVConfigGroup avConfig = new AVConfigGroup();
+		config.addModule(avConfig);
+
+		avConfig.setAllowedLinkMode("car");
+
+		OperatorConfig operatorConfig = new OperatorConfig();
+		avConfig.addOperator(operatorConfig);
+
+		// operatorConfig.getInteractionFinderConfig().setType(type);
+		// AVInteractionFinder
+
+		// operatorConfig.getGeneratorConfig().getVeh
+
+		avConfig.setEnableDistanceAnalysis(true);
+		avConfig.setPassengerAnalysisInterval(1);
+		avConfig.setVehicleAnalysisInterval(1);
+
+		// operatorConfig.getDispatcherConfig().setType(SingleHeuristicDispatcher.TYPE);
+		// operatorConfig.getDispatcherConfig().setType("DemandSupplyBalancingDispatcher");
+		// operatorConfig.getDispatcherConfig().setType("NorthPoleSharedDispatcher");
+		operatorConfig.getDispatcherConfig().setType("ExampleDispatcher");
+
+		operatorConfig.getGeneratorConfig().setType(PopulationDensityGenerator.TYPE);
+		operatorConfig.getGeneratorConfig().setNumberOfVehicles(200);
+
+		List<String> modes = new LinkedList<>(Arrays.asList(config.subtourModeChoice().getModes())); //
+		modes.add("av");
+		config.subtourModeChoice().setModes(modes.toArray(new String[modes.size()]));
+
+		AVScoringParameterSet params;
+
+		params = new AVScoringParameterSet();
+		params.setMarginalUtilityOfWaitingTime(-0.1);
+		params.setStuckUtility(-50.0);
+		params.setSubpopulation("person");
+		avConfig.addScoringParameters(params);
+
+		params = new AVScoringParameterSet();
+		params.setMarginalUtilityOfWaitingTime(-0.1);
+		params.setStuckUtility(-50.0);
+		params.setSubpopulation("freight");
+		avConfig.addScoringParameters(params);
+
+		// operatorConfig.getParams().put("virtualNetworkPath",
+		// "berlin_virtual_network/berlin_virtual_network");
+		// operatorConfig.getParams().put("travelDataPath", "berlin_travel_data");
+
+		// CONTROLLER
+
+		controller.addOverridingModule(new DvrpModule());
+		controller.addOverridingModule(new DvrpTravelTimeModule());
+		controller.addOverridingModule(new AVModule(false));
+
+		controller.configureQSimComponents(AVQSimModule::configureComponents);
 	}
 }
