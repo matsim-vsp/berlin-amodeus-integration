@@ -41,7 +41,7 @@ public class RunAmodeusInBerlinTest {
 
         Random rnd = new Random();
 
-        double scaleFactor = 0.1;
+        double scaleFactor = 0.01;
         log.info("sampling population once again by factor " + scaleFactor) ;
 
         log.info("number of persons before sampling = " + scenario.getPopulation().getPersons().size());
