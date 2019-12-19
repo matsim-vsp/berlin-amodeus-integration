@@ -13,11 +13,9 @@ import java.util.Iterator;
 import java.util.Map;
 import java.util.Random;
 
-import static org.junit.Assert.*;
+public class RunAmodeusInBerlinTest {
 
-public class RunAmodeusInBerlinIT {
-
-    Logger log = Logger.getLogger(RunAmodeusInBerlinIT.class);
+    Logger log = Logger.getLogger(RunAmodeusInBerlinTest.class);
 
     @Test
     public void RunAmoDeusInBerlinTest() throws IOException, URISyntaxException {
