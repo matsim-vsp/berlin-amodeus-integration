@@ -1,3 +1,4 @@
+import ch.ethz.idsc.amodeus.options.ScenarioOptions;
 import org.apache.log4j.Logger;
 import org.junit.Test;
 import org.matsim.api.core.v01.Id;
@@ -31,7 +32,8 @@ public class RunAmodeusInBerlinTest {
         Scenario scenario = RunAmodeusInBerlin.prepareScenario(config);
         sampleDownPopulation(scenario);
 
-        Controler controler = RunAmodeusInBerlin.prepareControler(scenario, workingDirectory);
+        ScenarioOptions scenarioOptions = RunAmodeusInBerlin.createScenarioOptions(config, workingDirectory);
+        Controler controler = RunAmodeusInBerlin.prepareControler(scenario, workingDirectory, scenarioOptions);
         controler.run();
     }
 

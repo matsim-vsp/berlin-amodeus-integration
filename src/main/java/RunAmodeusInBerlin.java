@@ -12,9 +12,14 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Random;
 
+import ch.ethz.idsc.amodeus.dispatcher.AdaptiveRealTimeRebalancingPolicy;
+import ch.ethz.idsc.amodeus.prep.VirtualNetworkCreators;
+import ch.ethz.idsc.amodeus.prep.VirtualNetworkPreparer;
+import ch.ethz.matsim.av.data.AVOperator;
 import org.apache.log4j.Logger;
 import org.matsim.api.core.v01.Scenario;
 import org.matsim.api.core.v01.TransportMode;
+import org.matsim.api.core.v01.network.Network;
 import org.matsim.api.core.v01.population.Person;
 import org.matsim.api.core.v01.population.Plan;
 import org.matsim.api.core.v01.population.PlanElement;
@@ -23,16 +28,16 @@ import org.matsim.contrib.dvrp.run.DvrpModule;
 import org.matsim.contrib.dvrp.trafficmonitoring.DvrpTravelTimeModule;
 import org.matsim.core.config.Config;
 import org.matsim.core.config.ConfigUtils;
-import org.matsim.core.config.groups.PlanCalcScoreConfigGroup;
 import org.matsim.core.config.groups.PlanCalcScoreConfigGroup.ActivityParams;
 import org.matsim.core.config.groups.PlanCalcScoreConfigGroup.ModeParams;
 import org.matsim.core.config.groups.QSimConfigGroup;
-import org.matsim.core.config.groups.StrategyConfigGroup.StrategySettings;
 import org.matsim.core.config.groups.VspExperimentalConfigGroup;
 import org.matsim.core.controler.AbstractModule;
 import org.matsim.core.controler.Controler;
 import org.matsim.core.controler.OutputDirectoryLogging;
 import org.matsim.core.gbl.Gbl;
+import org.matsim.core.network.algorithms.NetworkCleaner;
+import org.matsim.core.network.filter.NetworkFilterManager;
 import org.matsim.core.population.PopulationUtils;
 import org.matsim.core.router.MainModeIdentifier;
 import org.matsim.core.router.StageActivityTypes;
@@ -53,7 +58,6 @@ import ch.ethz.idsc.amodeus.net.MatsimAmodeusDatabase;
 import ch.ethz.idsc.amodeus.net.SimulationServer;
 import ch.ethz.idsc.amodeus.options.ScenarioOptions;
 import ch.ethz.idsc.amodeus.options.ScenarioOptionsBase;
-import ch.ethz.idsc.amodeus.util.io.MultiFileTools;
 import ch.ethz.matsim.av.config.AVConfigGroup;
 import ch.ethz.matsim.av.config.AVScoringParameterSet;
 import ch.ethz.matsim.av.config.operator.OperatorConfig;
@@ -65,6 +69,7 @@ import ch.sbb.matsim.routing.pt.raptor.SwissRailRaptorModule;
 public class RunAmodeusInBerlin {
 
 	private static final Logger log = Logger.getLogger(RunAmodeusInBerlin.class);
+	private static final boolean USE_VIRTUAL_NETWORK = true;
 
 
 	/**
@@ -92,14 +97,37 @@ public class RunAmodeusInBerlin {
 		File workingDirectory = getWorkingDirectory(args[0]);
 
 		Config config = prepareConfig(args);
-		
+
+
+
 		config.qsim().setNumberOfThreads(4);
 		config.global().setNumberOfThreads(4);
 
 		Scenario scenario = prepareScenario(config);
-		Controler controler = prepareControler(scenario, workingDirectory);
-		controler.run();
+		ScenarioOptions scenarioOptions = createScenarioOptions(config, workingDirectory);
 
+		Controler controler = prepareControler(scenario, workingDirectory, scenarioOptions);
+
+		if(USE_VIRTUAL_NETWORK){
+			//we need to to do this ourselves and to not rely on AmodeusVirtualNetworkModule as we need to filter the car network
+			createAndWriteVirtualNetwork(config, scenario, scenarioOptions);
+		}
+		controler.run();
+	}
+
+	private static void createAndWriteVirtualNetwork(Config config, Scenario scenario, ScenarioOptions scenarioOptions) {
+		AVConfigGroup avConfig = ConfigUtils.addOrGetModule(config, AVConfigGroup.class);
+//			createAndStoreVirtualNetwork();
+
+		int nrOfVehicles =  avConfig.getOperatorConfigs().get(OperatorConfig.DEFAULT_OPERATOR_ID).getGeneratorConfig().getNumberOfVehicles();
+
+		NetworkFilterManager mng = new NetworkFilterManager(scenario.getNetwork());
+		mng.addLinkFilter(l -> l.getAllowedModes().contains(TransportMode.car));
+
+		Network filteredNetwork = mng.applyFilters();
+		new NetworkCleaner().run(filteredNetwork);
+
+		VirtualNetworkPreparer.INSTANCE.create(filteredNetwork, scenario.getPopulation(), scenarioOptions, nrOfVehicles, (int) config.qsim().getEndTime());
 	}
 
 	static File getWorkingDirectory(String dir){
@@ -112,7 +140,7 @@ public class RunAmodeusInBerlin {
 		}
 	}
 
-	public static Controler prepareControler(Scenario scenario, File workingDirectory) throws IOException, URISyntaxException {
+	public static Controler prepareControler(Scenario scenario, File workingDirectory, ScenarioOptions scenarioOptions) throws IOException, URISyntaxException {
 		// note that for something like signals, and presumably drt, one needs the
 		// controler object
 
@@ -137,7 +165,8 @@ public class RunAmodeusInBerlin {
 		});
 
 		controler.addOverridingModule(new SwissRailRaptorModule());
-		configureAmodeus(scenario.getConfig(), scenario, controler, workingDirectory);
+		configureAmodeus(scenario.getConfig(), scenario, controler, workingDirectory, scenarioOptions);
+
 		return controler;
 	}
 
@@ -247,23 +276,11 @@ public class RunAmodeusInBerlin {
 		config.transit().setUsingTransitInMobsim(false);
 	}
 
-	public static void configureAmodeus(Config config, Scenario scenario, Controler controller, File workingDirectory)
+	public static void configureAmodeus(Config config, Scenario scenario, Controler controller, File workingDirectory, ScenarioOptions scenarioOptions)
 			throws IOException, URISyntaxException {
 		insertAVTripsIntoPopulation(scenario);
 		configureAVContrib(config, controller);
 		{ // Configure Amodeus
-
-			ScenarioOptions scenarioOptions = new ScenarioOptions(workingDirectory, ScenarioOptionsBase.getDefault());
-			scenarioOptions.setProperty("virtualNetwork", ""); // "berlin_virtual_network");
-			scenarioOptions.setProperty("travelData", "");
-			scenarioOptions.setProperty("LocationSpec", "BERLIN");
-			scenarioOptions.setProperty("numVirtualNodes", "10");
-
-			Path absoluteConfigPath = Paths.get(config.getContext().toURI());
-			Path workingDirectoryPath = FileSystems.getDefault().getPath(workingDirectory.getAbsolutePath());
-			scenarioOptions.setProperty("simuConfig", workingDirectoryPath.relativize(absoluteConfigPath).toString());
-
-			scenarioOptions.saveAndOverwriteAmodeusOptions();
 
 			// Open server port for clients to connect to (e.g. viewer)
 			SimulationServer.INSTANCE.startAcceptingNonBlocking();
@@ -284,6 +301,36 @@ public class RunAmodeusInBerlin {
 
 		// Add custom dispatcher
 		controller.addOverridingModule(new ExampleDispatcherModule());
+	}
+
+	static ScenarioOptions createScenarioOptions(Config config, File workingDirectory) throws IOException, URISyntaxException {
+		ScenarioOptions scenarioOptions = new ScenarioOptions(workingDirectory, ScenarioOptionsBase.getDefault());
+
+		if(USE_VIRTUAL_NETWORK){
+			//if you want to use some sophisticated rebalancing/dispatching algorithm,
+			//you may have to specify a virtualNetwork (representing 'rebalancing zones')
+			scenarioOptions.setProperty("virtualNetwork", "berlin_virtual_network");
+			scenarioOptions.setProperty("travelData", "berlin_travelData");
+
+			//this is how to set the virtualNetworkCreator
+			scenarioOptions.setProperty("virtualNetworkCreator", VirtualNetworkCreators.RECTANGULAR.toString());
+			scenarioOptions.setProperty("LATITUDE_NODES", "5"); //this defines the amount of cuts
+			scenarioOptions.setProperty("LONGITUDE_NODES", "5");
+
+			//that is the time bin size for the linear programming process
+			scenarioOptions.setProperty("dtTravelData", "3600");
+
+			scenarioOptions.setProperty("numVirtualNodes", "10");
+		}
+
+		scenarioOptions.setProperty("LocationSpec", "BERLIN");
+
+		Path absoluteConfigPath = Paths.get(config.getContext().toURI());
+		Path workingDirectoryPath = FileSystems.getDefault().getPath(workingDirectory.getAbsolutePath());
+		scenarioOptions.setProperty("simuConfig", workingDirectoryPath.relativize(absoluteConfigPath).toString());
+
+		scenarioOptions.saveAndOverwriteAmodeusOptions();
+		return scenarioOptions;
 	}
 
 	private static void insertAVTripsIntoPopulation(Scenario scenario) {
@@ -320,30 +367,15 @@ public class RunAmodeusInBerlin {
 		DvrpConfigGroup dvrpConfig = new DvrpConfigGroup();
 		config.addModule(dvrpConfig);
 
-		AVConfigGroup avConfig = new AVConfigGroup();
-		config.addModule(avConfig);
+		AVConfigGroup avConfig = ConfigUtils.addOrGetModule(config, AVConfigGroup.class);
 
 		avConfig.setAllowedLinkMode("car");
-
-		OperatorConfig operatorConfig = new OperatorConfig();
-		avConfig.addOperator(operatorConfig);
-
-		// operatorConfig.getInteractionFinderConfig().setType(type);
-		// AVInteractionFinder
-
-		// operatorConfig.getGeneratorConfig().getVeh
-
 		avConfig.setEnableDistanceAnalysis(true);
 		avConfig.setPassengerAnalysisInterval(1);
 		avConfig.setVehicleAnalysisInterval(1);
 
-		// operatorConfig.getDispatcherConfig().setType(SingleHeuristicDispatcher.TYPE);
-		// operatorConfig.getDispatcherConfig().setType("DemandSupplyBalancingDispatcher");
-		// operatorConfig.getDispatcherConfig().setType("NorthPoleSharedDispatcher");
-		operatorConfig.getDispatcherConfig().setType("ExampleDispatcher");
-
-		operatorConfig.getGeneratorConfig().setType(PopulationDensityGenerator.TYPE);
-		operatorConfig.getGeneratorConfig().setNumberOfVehicles(200);
+		OperatorConfig operatorConfig = prepareOperatorConfig();
+		avConfig.addOperator(operatorConfig);
 
 		List<String> modes = new LinkedList<>(Arrays.asList(config.subtourModeChoice().getModes())); //
 		modes.add("av");
@@ -363,16 +395,41 @@ public class RunAmodeusInBerlin {
 		params.setSubpopulation("freight");
 		avConfig.addScoringParameters(params);
 
-		// operatorConfig.getParams().put("virtualNetworkPath",
-		// "berlin_virtual_network/berlin_virtual_network");
-		// operatorConfig.getParams().put("travelDataPath", "berlin_travel_data");
-
 		// CONTROLLER
-
 		controller.addOverridingModule(new DvrpModule());
 		controller.addOverridingModule(new DvrpTravelTimeModule());
 		controller.addOverridingModule(new AVModule(false));
 
 		controller.configureQSimComponents(AVQSimModule::configureComponents);
+	}
+
+	private static OperatorConfig prepareOperatorConfig() {
+		OperatorConfig operatorConfig = new OperatorConfig();
+
+		// AVInteractionFinder
+		// operatorConfig.getInteractionFinderConfig().setType(type);
+
+		{ //define dispatch algorithm
+
+			// operatorConfig.getDispatcherConfig().setType(SingleHeuristicDispatcher.TYPE);
+			// operatorConfig.getDispatcherConfig().setType("DemandSupplyBalancingDispatcher");
+			// operatorConfig.getDispatcherConfig().setType("NorthPoleSharedDispatcher");
+//		operatorConfig.getDispatcherConfig().setType("ExampleDispatcher");
+
+			//this is the dispatcher that Chengqi Lu presented at VSP in feb'2020. it rebalances based on spatial distribution and vehicle-to-request deficit calculation
+			//using linear programming (GLPK)
+			operatorConfig.getDispatcherConfig().setType(AdaptiveRealTimeRebalancingPolicy.class.getSimpleName());
+		}
+
+		operatorConfig.getGeneratorConfig().setType(PopulationDensityGenerator.TYPE);
+		operatorConfig.getGeneratorConfig().setNumberOfVehicles(200);
+
+		{ //define virtual network
+//			operatorConfig.getParams().put("virtualNetworkPath", "berlin_virtual_network/berlin_virtual_network");
+//			operatorConfig.getParams().put("travelDataPath", "berlin_virtual_network/berlin_travel_data");
+//			operatorConfig.getParams().put("regenerateVirtualNetwork", "false");
+//			operatorConfig.getParams().put("regenerateTravelData", "false");
+		}
+		return operatorConfig;
 	}
 }
