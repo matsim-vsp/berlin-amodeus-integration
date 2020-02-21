@@ -69,7 +69,7 @@ import ch.sbb.matsim.routing.pt.raptor.SwissRailRaptorModule;
 public class RunAmodeusInBerlin {
 
 	private static final Logger log = Logger.getLogger(RunAmodeusInBerlin.class);
-	private static final boolean USE_VIRTUAL_NETWORK = true;
+	private static final boolean USE_VIRTUAL_NETWORK = false;
 
 
 	/**
@@ -108,10 +108,13 @@ public class RunAmodeusInBerlin {
 
 		Controler controler = prepareControler(scenario, workingDirectory, scenarioOptions);
 
-		if(USE_VIRTUAL_NETWORK){
+
+		//if you do not use the simple dispatching algorithm, you may need a virtualNetwork
+		if(ConfigUtils.addOrGetModule(config, AVConfigGroup.class).getOperatorConfig(OperatorConfig.DEFAULT_OPERATOR_ID).getDispatcherConfig().getType().equals("ExampleDispatcher")){
 			//we need to to do this ourselves and to not rely on AmodeusVirtualNetworkModule as we need to filter the car network
 			createAndWriteVirtualNetwork(config, scenario, scenarioOptions);
 		}
+
 		controler.run();
 	}
 
@@ -279,7 +282,7 @@ public class RunAmodeusInBerlin {
 	public static void configureAmodeus(Config config, Scenario scenario, Controler controller, File workingDirectory, ScenarioOptions scenarioOptions)
 			throws IOException, URISyntaxException {
 		insertAVTripsIntoPopulation(scenario);
-		configureAVContrib(config, controller);
+		configureAVContrib(config, controller, scenarioOptions);
 		{ // Configure Amodeus
 
 			// Open server port for clients to connect to (e.g. viewer)
@@ -357,7 +360,7 @@ public class RunAmodeusInBerlin {
 		}
 	}
 
-	private static void configureAVContrib(Config config, Controler controller) {
+	private static void configureAVContrib(Config config, Controler controller, ScenarioOptions scenarioOptions) {
 		// Configure AV
 
 		// CONFIG
@@ -374,7 +377,7 @@ public class RunAmodeusInBerlin {
 		avConfig.setPassengerAnalysisInterval(1);
 		avConfig.setVehicleAnalysisInterval(1);
 
-		OperatorConfig operatorConfig = prepareOperatorConfig();
+		OperatorConfig operatorConfig = prepareOperatorConfig(config, controller.getScenario(), scenarioOptions);
 		avConfig.addOperator(operatorConfig);
 
 		List<String> modes = new LinkedList<>(Arrays.asList(config.subtourModeChoice().getModes())); //
@@ -403,7 +406,7 @@ public class RunAmodeusInBerlin {
 		controller.configureQSimComponents(AVQSimModule::configureComponents);
 	}
 
-	private static OperatorConfig prepareOperatorConfig() {
+	private static OperatorConfig prepareOperatorConfig(Config config, Scenario scenario, ScenarioOptions scenarioOptions) {
 		OperatorConfig operatorConfig = new OperatorConfig();
 
 		// AVInteractionFinder

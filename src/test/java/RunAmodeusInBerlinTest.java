@@ -36,6 +36,9 @@ public class RunAmodeusInBerlinTest {
         sampleDownPopulation(scenario);
 
         ScenarioOptions scenarioOptions = RunAmodeusInBerlin.createScenarioOptions(config, workingDirectory);
+        //do not use any virtual network
+        scenarioOptions.setProperty("virtualNetwork", "");
+        scenarioOptions.setProperty("travelData", "");
         Controler controler = RunAmodeusInBerlin.prepareControler(scenario, workingDirectory, scenarioOptions);
 
         //use simple dispatcher for test
