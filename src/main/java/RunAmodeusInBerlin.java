@@ -69,7 +69,6 @@ import ch.sbb.matsim.routing.pt.raptor.SwissRailRaptorModule;
 public class RunAmodeusInBerlin {
 
 	private static final Logger log = Logger.getLogger(RunAmodeusInBerlin.class);
-	private static final boolean USE_VIRTUAL_NETWORK = false;
 
 
 	/**
@@ -309,7 +308,7 @@ public class RunAmodeusInBerlin {
 	static ScenarioOptions createScenarioOptions(Config config, File workingDirectory) throws IOException, URISyntaxException {
 		ScenarioOptions scenarioOptions = new ScenarioOptions(workingDirectory, ScenarioOptionsBase.getDefault());
 
-		if(USE_VIRTUAL_NETWORK){
+		{
 			//if you want to use some sophisticated rebalancing/dispatching algorithm,
 			//you may have to specify a virtualNetwork (representing 'rebalancing zones')
 			scenarioOptions.setProperty("virtualNetwork", "berlin_virtual_network");
