@@ -1,10 +1,13 @@
 import ch.ethz.idsc.amodeus.options.ScenarioOptions;
+import ch.ethz.matsim.av.config.AVConfigGroup;
+import ch.ethz.matsim.av.config.operator.OperatorConfig;
 import org.apache.log4j.Logger;
 import org.junit.Test;
 import org.matsim.api.core.v01.Id;
 import org.matsim.api.core.v01.Scenario;
 import org.matsim.api.core.v01.population.Person;
 import org.matsim.core.config.Config;
+import org.matsim.core.config.ConfigUtils;
 import org.matsim.core.controler.Controler;
 
 import java.io.File;
@@ -34,6 +37,10 @@ public class RunAmodeusInBerlinTest {
 
         ScenarioOptions scenarioOptions = RunAmodeusInBerlin.createScenarioOptions(config, workingDirectory);
         Controler controler = RunAmodeusInBerlin.prepareControler(scenario, workingDirectory, scenarioOptions);
+
+        //use simple dispatcher for test
+        ConfigUtils.addOrGetModule(config, AVConfigGroup.class).getOperatorConfig(OperatorConfig.DEFAULT_OPERATOR_ID).getDispatcherConfig().setType("ExampleDispatcher");
+
         controler.run();
     }
 
