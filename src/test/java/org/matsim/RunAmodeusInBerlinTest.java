@@ -1,3 +1,5 @@
+package org.matsim;
+
 import ch.ethz.idsc.amodeus.options.ScenarioOptions;
 import ch.ethz.matsim.av.config.AVConfigGroup;
 import ch.ethz.matsim.av.config.operator.OperatorConfig;
@@ -9,6 +11,8 @@ import org.matsim.api.core.v01.population.Person;
 import org.matsim.core.config.Config;
 import org.matsim.core.config.ConfigUtils;
 import org.matsim.core.controler.Controler;
+import org.matsim.core.scenario.ScenarioUtils;
+import org.matsim.setup.ScenarioSetup;
 
 import java.io.File;
 import java.io.IOException;
@@ -25,21 +29,23 @@ public class RunAmodeusInBerlinTest {
     public void RunAmoDeusInBerlinTest() throws IOException, URISyntaxException {
         String[] args = new String[] { "scenarios" , "berlin-v5.4-1pct.config.xml" };
 
-        File workingDirectory = RunAmodeusInBerlin.getWorkingDirectory(args[0]);
-        Config config = RunAmodeusInBerlin.prepareConfig(args);
+        File workingDirectory = ScenarioSetup.getWorkingDirectory(args[0]);
+        Config config = ScenarioSetup.prepareConfig(args);
 
         config.qsim().setNumberOfThreads(4);
         config.global().setNumberOfThreads(4);
         config.controler().setLastIteration(1);
 
-        Scenario scenario = RunAmodeusInBerlin.prepareScenario(config);
+        Scenario scenario = ScenarioUtils.loadScenario(config);
+
+        RunAmodeusInBerlin.backportScenario(config, scenario);
         sampleDownPopulation(scenario);
 
-        ScenarioOptions scenarioOptions = RunAmodeusInBerlin.createScenarioOptions(config, workingDirectory);
+        ScenarioOptions scenarioOptions = ScenarioSetup.createScenarioOptions(config, workingDirectory);
         //do not use any virtual network
         scenarioOptions.setProperty("virtualNetwork", "");
         scenarioOptions.setProperty("travelData", "");
-        Controler controler = RunAmodeusInBerlin.prepareControler(scenario, workingDirectory, scenarioOptions);
+        Controler controler = RunAmodeusInBerlin.prepareControler(scenario, scenarioOptions);
 
         //use simple dispatcher for test
         ConfigUtils.addOrGetModule(config, AVConfigGroup.class).getOperatorConfig(OperatorConfig.DEFAULT_OPERATOR_ID).getDispatcherConfig().setType("ExampleDispatcher");

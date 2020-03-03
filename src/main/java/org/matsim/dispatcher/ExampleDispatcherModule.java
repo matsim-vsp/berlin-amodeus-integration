@@ -1,4 +1,5 @@
-import ch.ethz.idsc.amodeus.dispatcher.AdaptiveRealTimeRebalancingPolicy;
+package org.matsim.dispatcher;
+
 import org.matsim.core.controler.AbstractModule;
 
 import ch.ethz.matsim.av.framework.AVUtils;

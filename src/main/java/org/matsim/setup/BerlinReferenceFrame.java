@@ -1,9 +1,8 @@
-
-
-import org.matsim.core.utils.geometry.CoordinateTransformation;
-import org.matsim.core.utils.geometry.transformations.GeotoolsTransformation;
+package org.matsim.setup;
 
 import ch.ethz.idsc.amodeus.data.ReferenceFrame;
+import org.matsim.core.utils.geometry.CoordinateTransformation;
+import org.matsim.core.utils.geometry.transformations.GeotoolsTransformation;
 
 public class BerlinReferenceFrame implements ReferenceFrame {
 	@Override
