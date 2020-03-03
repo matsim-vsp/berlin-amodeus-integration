@@ -109,7 +109,7 @@ public class RunAmodeusInBerlin {
 
 
 		//if you do not use the simple dispatching algorithm, you may need a virtualNetwork
-		if(ConfigUtils.addOrGetModule(config, AVConfigGroup.class).getOperatorConfig(OperatorConfig.DEFAULT_OPERATOR_ID).getDispatcherConfig().getType().equals("ExampleDispatcher")){
+		if(! ConfigUtils.addOrGetModule(config, AVConfigGroup.class).getOperatorConfig(OperatorConfig.DEFAULT_OPERATOR_ID).getDispatcherConfig().getType().equals("ExampleDispatcher")){
 			//we need to to do this ourselves and to not rely on AmodeusVirtualNetworkModule as we need to filter the car network
 			createAndWriteVirtualNetwork(config, scenario, scenarioOptions);
 		}
@@ -416,11 +416,11 @@ public class RunAmodeusInBerlin {
 			// operatorConfig.getDispatcherConfig().setType(SingleHeuristicDispatcher.TYPE);
 			// operatorConfig.getDispatcherConfig().setType("DemandSupplyBalancingDispatcher");
 			// operatorConfig.getDispatcherConfig().setType("NorthPoleSharedDispatcher");
-//		operatorConfig.getDispatcherConfig().setType("ExampleDispatcher");
+		operatorConfig.getDispatcherConfig().setType("ExampleDispatcher");
 
 			//this is the dispatcher that Chengqi Lu presented at VSP in feb'2020. it rebalances based on spatial distribution and vehicle-to-request deficit calculation
 			//using linear programming (GLPK)
-			operatorConfig.getDispatcherConfig().setType(AdaptiveRealTimeRebalancingPolicy.class.getSimpleName());
+//			operatorConfig.getDispatcherConfig().setType(AdaptiveRealTimeRebalancingPolicy.class.getSimpleName());
 		}
 
 		operatorConfig.getGeneratorConfig().setType(PopulationDensityGenerator.TYPE);
